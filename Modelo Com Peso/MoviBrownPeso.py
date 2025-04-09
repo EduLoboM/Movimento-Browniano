@@ -1,116 +1,100 @@
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import random
 import math
+from typing import List
 
-GRID_SIZE = 250
-NUM_PARTICLES = 100
-TIME_STEP = 1.0
-BROWNIAN_STRENGTH = 1.5
-COLLISION_DIST_FACTOR = 1.0
-REPULSION_STRENGTH = 2.0
-ATTRACTION_STRENGTH = 2.0
+
+GRID_SIZE = 0.01
+NUM_PARTICLES = 500
+TIME_STEP = 6e-1
+BROWNIAN_STRENGTH = 1e-4
+
+
+COULOMB_CONSTANT = 8.99e9
+
+REPULSION_STRENGTH = COULOMB_CONSTANT
+ATTRACTION_STRENGTH = COULOMB_CONSTANT
+
+COLLISION_DIST_FACTOR = 10.0
+
+
+DENSITY = 2000
 
 class Particle:
-    def __init__(self, x, y, mass, charge):
+
+    def __init__(self, x: float, y: float, mass: float, charge: float):
         self.x = x
         self.y = y
         self.mass = mass
         self.charge = charge
+        self.radius = ((3 * mass) / (4 * math.pi * DENSITY))**(1/3)
 
-        self.radius = math.sqrt(mass)  
+    def update_position(self) -> None:
 
-    def update_position(self):
-
-        dx = random.uniform(-BROWNIAN_STRENGTH, BROWNIAN_STRENGTH)
-        dy = random.uniform(-BROWNIAN_STRENGTH, BROWNIAN_STRENGTH)
-        self.x += dx * TIME_STEP
-        self.y += dy * TIME_STEP
+        dx = random.uniform(-BROWNIAN_STRENGTH, BROWNIAN_STRENGTH) * TIME_STEP
+        dy = random.uniform(-BROWNIAN_STRENGTH, BROWNIAN_STRENGTH) * TIME_STEP
+        self.x += dx
+        self.y += dy
 
         if self.x < 0:
             self.x = -self.x
-        if self.x > GRID_SIZE:
+        elif self.x > GRID_SIZE:
             self.x = 2 * GRID_SIZE - self.x
+
         if self.y < 0:
             self.y = -self.y
-        if self.y > GRID_SIZE:
+        elif self.y > GRID_SIZE:
             self.y = 2 * GRID_SIZE - self.y
 
-def combine_particles(p1, p2):
+def combine_particles(p1: Particle, p2: Particle) -> Particle:
+
     new_mass = p1.mass + p2.mass
     new_charge = p1.charge + p2.charge
     new_x = (p1.x * p1.mass + p2.x * p2.mass) / new_mass
     new_y = (p1.y * p1.mass + p2.y * p2.mass) / new_mass
+    print("Fusão!")
     return Particle(new_x, new_y, new_mass, new_charge)
 
-def repel_particles(p1, p2):
+def repel_particles(p1: Particle, p2: Particle) -> None:
+
     dx = p1.x - p2.x
     dy = p1.y - p2.y
     dist = math.hypot(dx, dy)
     if dist == 0:
         return
-    force = REPULSION_STRENGTH / dist
-    nx = dx / dist
-    ny = dy / dist
-    p1.x += nx * force * TIME_STEP
-    p1.y += ny * force * TIME_STEP
-    p2.x -= nx * force * TIME_STEP
-    p2.y -= ny * force * TIME_STEP
+    force = REPULSION_STRENGTH * abs(p1.charge * p2.charge) / (dist**2)
+    nx, ny = dx / dist, dy / dist
+    p1.x += nx * force * TIME_STEP**2 / p1.mass
+    p1.y += ny * force * TIME_STEP**2 / p1.mass
+    p2.x -= nx * force * TIME_STEP**2 / p2.mass
+    p2.y -= ny * force * TIME_STEP**2 / p2.mass
 
-def attract_particles(p1, p2):
-
-    """
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡯⠟⠛⠋⠉⠉⠉⠉⠉⠙⠛⠓⠿⠿⣟⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡯⠞⠋⢁⡀⠤⠀⠒⠀⠀⠀⠐⠒⠠⢀⠢⠀⠀⠀⠉⠛⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⡿⣿⠽⠛⠃⣀⠔⠉⠀⠀⠀⠀⢀⣀⣀⣤⣤⠤⠤⠄⠈⠀⠑⢀⡀⠀⠀⠈⠙⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⠿⠛⠿⠛⠃⠀⠀⡁⠁⠀⢀⣠⣴⣾⡿⠛⠉⠁⠀⠀⠀⠀⣀⢴⠤⢄⡀⠀⠀⠀⠀⠀⠀⠈⠻⠟⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⡿⡿⢦⠀⠀⠀⠀⠄⠀⠀⠀⠀⢀⣴⣿⣫⠤⠔⠚⠛⠒⠒⠚⠛⠯⠙⠢⡕⠈⠢⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣷⡇⠘⡄⠀⠀⠈⠀⠀⠀⠠⢴⡾⠛⠁⠀⠀⠀⠀⠂⠀⠀⠀⠀⠀⠀⠀⠸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⡇⠄⠚⠦⢀⣀⣧⠤⠔⠒⠛⣉⣉⣉⣉⣉⣉⣉⡁⢻⣦⡀⠀⠀⠄⣴⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⣿⣿⣿⣿⣿⣿⣿
-⡿⠁⢀⠤⠒⣉⡥⠴⠖⢛⡯⣍⠉⢉⠤⢤⡀⢀⠬⣍⢉⠿⢿⣦⡀⠈⢻⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⣿⣿⣿⣿⣿⣿
-⡇⠠⣡⢴⡟⠓⠦⡀⣰⠃⠀⠈⠳⠁⠀⠀⠻⠃⠀⠘⠋⠀⠀⠷⠓⡀⠀⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⣿
-⣷⣾⠣⡾⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢄⠀⢀⠀⠀⠀⠀⠀⠀⠆⠘⡄⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⠀⠠⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⡀⠀⢀⠀⣀⣼⣆⠈⢧⡀⠀⠀⠀⠀⠸⠀⢹⡀⠀⠀⠀⠸⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣇⠀⠀⠀⢀⣀⢠⠤⠐⠶⠂⠐⠒⠈⢹⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠈⢗⠀⠀⠀⠀⠀⣇⠀⢇⠀⠀⠀⠀⡷⣿⣿⣿⣿
-⣿⣿⣿⣷⣄⣌⠀⠀⠀⠀⠀⣀⣀⣤⣄⣤⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠈⢆⠀⠀⠀⠀⢸⠀⠘⠀⠀⠀⠀⣁⣿⣿⣿⣿
-⣿⣿⣿⣿⣷⡿⡿⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠈⢾⡄⠀⠀⠘⡇⠀⠀⠀⠀⢰⣷⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⡀⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⠈⠇⠀⠀⠀⣧⠀⠀⠀⠀⣸⣻⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣷⠀⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠿⢿⣿⣿⣧⠀⠄⠀⠀⢠⠀⠀⢰⣠⣯⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣇⠀⢻⣿⣿⣿⢿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠛⠃⠀⠀⠀⠉⢻⣿⠀⠀⠀⠀⢸⠀⠀⣼⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⡿⣠⠴⠟⢋⡁⠾⠿⠋⠙⠻⠋⠉⠉⠉⠀⠀⠀⠀⠀⢠⣀⣀⣠⠏⠀⡸⠀⠀⢸⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⢱⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⡖⠤⣤⣀⣼⡷⠞⢁⣠⣾⠃⠀⠀⣼⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣗⡇⠀⣀⠀⠀⠀⠀⠀⢀⡀⠀⠀⣤⣀⠀⣰⣡⣴⠖⠻⣕⠀⢺⠻⠊⠁⠀⣠⣾⣯⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⠘⢧⡴⠛⣆⣠⠖⢄⣀⣞⣉⣲⡾⠵⠚⠋⠉⠐⠈⠀⠉⠛⠓⠀⠀⠒⠒⠿⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣷⣄⡉⠛⠛⠛⢛⣛⣉⣩⣥⡄⠒⠂⠀⠀⠀⠁⠉⠀⢀⣠⣌⣷⣖⣤⣄⣀⠘⠻⣻⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣯⣭⣭⣭⣿⣿⣻⣿⣷⣷⣷⣶⣶⣶⣶⣺⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣆⣬⣘⣻⢿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷
-    """
+def attract_particles(p1: Particle, p2: Particle) -> None:
 
     dx = p2.x - p1.x
     dy = p2.y - p1.y
     dist = math.hypot(dx, dy)
     if dist == 0:
         return  
-    force = ATTRACTION_STRENGTH / dist  
-    nx = dx / dist
-    ny = dy / dist
-    p1.x += nx * force * TIME_STEP
-    p1.y += ny * force * TIME_STEP
-    p2.x -= nx * force * TIME_STEP
-    p2.y -= ny * force * TIME_STEP
+    force = ATTRACTION_STRENGTH * abs(p1.charge * p2.charge) / (dist**2)
+    nx, ny = dx / dist, dy / dist
+    p1.x += nx * force * TIME_STEP**2 / p1.mass
+    p1.y += ny * force * TIME_STEP**2 / p1.mass
+    p2.x -= nx * force * TIME_STEP**2 / p2.mass
+    p2.y -= ny * force * TIME_STEP**2 / p2.mass
 
-def initialize_particles(num_particles):
+def initialize_particles(num_particles: int) -> List[Particle]:
+
     particles = []
     for _ in range(num_particles):
         x = random.uniform(0, GRID_SIZE)
         y = random.uniform(0, GRID_SIZE)
-        mass = random.uniform(1, 5)               
-        charge = random.uniform(-5, 5)            
+        mass = random.uniform(1e-15, 5e-15)
+        charge = random.uniform(-3e-19, 3e-19)
         particles.append(Particle(x, y, mass, charge))
     return particles
-
 
 particles = initialize_particles(NUM_PARTICLES)
 
@@ -119,30 +103,35 @@ scatter = ax.scatter([], [], s=[], c=[])
 
 ax.set_xlim(0, GRID_SIZE)
 ax.set_ylim(0, GRID_SIZE)
-ax.set_title("Simulação de Partículas com Movimento Browniano")
-ax.set_xlabel("X")
-ax.set_ylabel("Y")
+ax.set_title("Simulação de Partículas com Movimento Browniano Realista")
+ax.set_xlabel("X (m)")
+ax.set_ylabel("Y (m)")
 
-def get_particle_color(charge):
-    if charge < 0:
-        intensity = min(1, abs(charge) / 5)
-        return (0, 0, intensity)
-    else:
-        intensity = min(1, charge / 5)
-        return (intensity, 0, 0)
+def get_particle_color(charge: float) -> tuple:
 
-def update(frame):
+    intensity = min(1, abs(charge) / (3e-19))
+    return (0, 0, intensity) if charge < 0 else (intensity, 0, 0)
+
+def update(frame: int):
+
     global particles
 
     for p in particles:
         p.update_position()
 
+    indices = list(range(len(particles)))
     i = 0
-    while i < len(particles):
-        p1 = particles[i]
+    while i < len(indices):
+        idx1 = indices[i]
+        p1 = particles[idx1]
         j = i + 1
-        while j < len(particles):
-            p2 = particles[j]
+        while j < len(indices):
+            idx2 = indices[j]
+            if idx1 == idx2:
+                j += 1
+                continue
+
+            p2 = particles[idx2]
             dx = p1.x - p2.x
             dy = p1.y - p2.y
             distance = math.hypot(dx, dy)
@@ -155,10 +144,13 @@ def update(frame):
             if distance < interaction_distance:
                 if p1.charge * p2.charge < 0:
                     new_particle = combine_particles(p1, p2)
-                    particles.pop(j)
-                    particles.pop(i)
+                    indices.pop(j)
+                    indices.pop(i)
+                    for index in sorted([idx1, idx2], reverse=True):
+                        particles.pop(index)
                     particles.append(new_particle)
-                    i = -1 
+                    indices = list(range(len(particles)))
+                    i = -1
                     break
                 else:
                     repel_particles(p1, p2)
@@ -167,7 +159,7 @@ def update(frame):
 
     xs = [p.x for p in particles]
     ys = [p.y for p in particles]
-    sizes = [p.mass * 10 for p in particles]
+    sizes = [(p.radius * 1e6)**2 for p in particles]
     colors = [get_particle_color(p.charge) for p in particles]
     scatter.set_offsets(np.column_stack((xs, ys)))
     scatter.set_sizes(sizes)
@@ -176,5 +168,4 @@ def update(frame):
     return scatter,
 
 animation = FuncAnimation(fig, update, frames=200, interval=50, blit=True)
-
 plt.show()
