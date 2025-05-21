@@ -17,7 +17,6 @@ import (
 
 type Point struct{ X, Y int }
 
-// quadratic Bezier for smooth branch
 func bezier(p0, p1, p2 Point, t float64) Point {
 	u := 1 - t
 	u2 := u * u
@@ -34,31 +33,25 @@ func main() {
 	const nPontos = 300
 	const mObjetivo = (nPontos * nPontos) / 10
 
-	// grid para DLA
 	matriz := make([][]bool, nPontos)
 	for i := range matriz {
 		matriz[i] = make([]bool, nPontos)
 	}
 
-	// gerador randômico
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	// seed principal: um spline central vertical simulando o tronco
 	mid := nPontos / 2
 	seeds := make([]Point, 0)
-	// dois pontos de controle para Bezier: base, meio, topo
 	p0 := Point{mid, 0}
 	p2 := Point{mid, nPontos - 1}
 	for k := 0; k <= 100; k++ {
 		t := float64(k) / 100
-		// p1 desloca ligeiramente para criar curvas suaves
 		p1 := Point{mid + rng.Intn(21) - 10, nPontos / 2}
 		pt := bezier(p0, p1, p2, t)
 		seeds = append(seeds, pt)
 		matriz[pt.Y][pt.X] = true
 	}
 
-	// DLA parameters
 	dx := []int{-1, 1, 0, 0}
 	dy := []int{0, 0, -1, 1}
 	pSalvos := len(seeds)
@@ -81,7 +74,6 @@ func main() {
 		return x
 	}
 
-	// propagation until fill
 	for pSalvos < mObjetivo {
 		i := rng.Intn(nPontos)
 		j := rng.Intn(nPontos)
@@ -104,7 +96,6 @@ func main() {
 
 	fmt.Println("Simulação concluída, total de pontos:", len(historico))
 
-	// export CSV
 	outFile, err := os.Create("pontos_pinheiro.csv")
 	if err != nil {
 		log.Fatalf("erro criando CSV: %v", err)
@@ -117,7 +108,6 @@ func main() {
 		writer.Write([]string{strconv.Itoa(pt[0]), strconv.Itoa(pt[1])})
 	}
 
-	// Plot
 	p := plot.New()
 	if err != nil {
 		log.Fatalf("erro criando plot: %v", err)
@@ -133,7 +123,6 @@ func main() {
 	}
 	scatter, _ := plotter.NewScatter(pts)
 	scatter.GlyphStyle.Radius = vg.Points(0.5)
-	// cor hex ffe900 (amarelo intenso)
 	scatter.GlyphStyle.Color = color.RGBA{0xFF, 0xE9, 0x00, 255}
 	p.Add(scatter)
 
