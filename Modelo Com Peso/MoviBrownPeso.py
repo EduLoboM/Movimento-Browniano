@@ -5,7 +5,6 @@ import random
 import math
 from typing import List
 
-
 GRID_SIZE = 0.01
 NUM_PARTICLES = 500
 TIME_STEP = 1e-2
